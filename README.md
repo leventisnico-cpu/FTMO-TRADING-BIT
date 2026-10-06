@@ -57,6 +57,23 @@ uv run pytest --cov=ftmo_bot --cov-branch --cov-report=json:coverage.json
 uv run ftmo-bot report --coverage-json coverage.json
 ```
 
+### Windows Security blocked a step
+
+If a step stops with code `-1073739514` (`0xC0000906`), Windows Security killed
+the process. That is not a failing test.
+
+1. Open **Windows Security → Virus & threat protection → Protection history**
+   and read which file and which threat name it reports.
+2. If the file is inside this folder or the `uv` cache (`%LOCALAPPDATA%\uv`)
+   and it's flagged by a generic or heuristic detection, add a folder exclusion
+   for this repo only. In an **administrator** PowerShell:
+   `Add-MpPreference -ExclusionPath "$env:USERPROFILE\FTMO-TRADING-BIT"`
+3. To see which test was running, re-run `uv run pytest -v`. The last test
+   name printed is the one that was stopped.
+
+If the detection names a specific known malware family, or points at a file
+outside this folder, don't add an exclusion. Look into it first.
+
 ## Live: FTMO Free Trial first, on a Windows VPS in Europe
 
 1. Install **two** MT5 terminals in separate folders (e.g. `C:\MT5-Guard`,

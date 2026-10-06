@@ -4,6 +4,13 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path $PSScriptRoot -Parent
 Set-Location $RepoRoot
 
+# uv's installer puts uv.exe in ~\.local\bin but only shells opened afterwards
+# see it on PATH; pick it up here so scripts work in the same window.
+if ($env:USERPROFILE -and -not (Get-Command uv -ErrorAction SilentlyContinue)) {
+    $uvHome = Join-Path $env:USERPROFILE ".local\bin"
+    if (Test-Path (Join-Path $uvHome "uv.exe")) { $env:Path = "$uvHome;$env:Path" }
+}
+
 function Import-DotEnv {
     <#
       Loads KEY=VALUE lines from .env (git-ignored) into this process's
@@ -38,5 +45,12 @@ function Invoke-Step {
     Write-Host ""
     Write-Host "==> $Title" -ForegroundColor Cyan
     & $Block
+    if ($LASTEXITCODE -eq -1073739514) {
+        # 0xC0000906 STATUS_VIRUS_INFECTED: antivirus killed the process.
+        throw ("step '$Title' was stopped by Windows Security (0xC0000906, a virus/threat " +
+            "block). This is not a failing test. Open Windows Security > Virus & threat " +
+            "protection > Protection history to see which file it flagged, then see " +
+            "README.md 'Windows Security blocked a step'.")
+    }
     if ($LASTEXITCODE -ne 0) { throw "step failed ($LASTEXITCODE): $Title" }
 }
