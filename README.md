@@ -21,6 +21,7 @@ every gate green on real ticks **and** the 60-day FTMO Free Trial passes.
 | `src/ftmo_bot/{data,strategy,backtest,execution}` | Data pipeline, strategy, backtest and Monte Carlo, MT5 execution |
 | `scripts/setup.ps1` | One-time Windows setup and checks |
 | `scripts/research.ps1` | Download → bars → integrity → in-sample backtest → report |
+| `scripts/doctor.ps1` | Read-only health check: tools, MT5 terminal and account, symbols, data sites, `.env`, tests |
 | `scripts/run_live.ps1` | Starts and supervises the guard and the runner on the VPS |
 | `.env.example` | Template for MT5 logins and alerts (copy to the git-ignored `.env`) |
 
@@ -34,6 +35,9 @@ cd FTMO-TRADING-BIT
 
 # 1. Install + run every test (and check the MetaTrader5 package)
 powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
+
+# Health check any time (MT5 open and logged in for the MT5 checks); paste the output for help
+powershell -ExecutionPolicy Bypass -File scripts\doctor.ps1
 
 # 2. Research: ~2–4 GB of ticks since 2020 (resumable), in-sample backtest, report
 powershell -ExecutionPolicy Bypass -File scripts\research.ps1
@@ -52,6 +56,23 @@ uv run ftmo-bot montecarlo --split oos
 uv run pytest --cov=ftmo_bot --cov-branch --cov-report=json:coverage.json
 uv run ftmo-bot report --coverage-json coverage.json
 ```
+
+### Windows Security blocked a step
+
+If a step stops with code `-1073739514` (`0xC0000906`), Windows Security killed
+the process. That is not a failing test.
+
+1. Open **Windows Security → Virus & threat protection → Protection history**
+   and read which file and which threat name it reports.
+2. If the file is inside this folder or the `uv` cache (`%LOCALAPPDATA%\uv`)
+   and it's flagged by a generic or heuristic detection, add a folder exclusion
+   for this repo only. In an **administrator** PowerShell:
+   `Add-MpPreference -ExclusionPath "$env:USERPROFILE\FTMO-TRADING-BIT"`
+3. To see which test was running, re-run `uv run pytest -v`. The last test
+   name printed is the one that was stopped.
+
+If the detection names a specific known malware family, or points at a file
+outside this folder, don't add an exclusion. Look into it first.
 
 ## Live: FTMO Free Trial first, on a Windows VPS in Europe
 

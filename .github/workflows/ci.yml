@@ -36,3 +36,22 @@ jobs:
           python-version: "3.11"
       - run: uv sync --group dev --frozen
       - run: uv run pytest -q
+      - name: PowerShell scripts parse in Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $bad = 0
+          foreach ($f in Get-ChildItem scripts\*.ps1) {
+            $t = $null; $e = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$t, [ref]$e) | Out-Null
+            if ($e) { $bad++; $e | ForEach-Object { Write-Host "$($f.Name):$($_.Extent.StartLineNumber) $($_.Message)" } }
+            else { Write-Host "$($f.Name): OK" }
+          }
+          exit $bad
+      - name: doctor.ps1 runs end to end (no MT5 on the runner, so FAILs are expected)
+        shell: powershell
+        run: |
+          $out = powershell -ExecutionPolicy Bypass -File scripts\doctor.ps1 -SkipTests 2>&1 | Out-String
+          Write-Host $out
+          # A crash also exits 1, so require the summary line, not just the exit code.
+          if ($out -notmatch "Summary: \d+ PASS, \d+ WARN, \d+ FAIL") { Write-Host "doctor.ps1 did not finish"; exit 1 }
+          exit 0

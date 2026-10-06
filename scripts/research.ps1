@@ -5,7 +5,7 @@
 
 .DESCRIPTION
   Safe to re-run: downloads resume where they stopped. It never runs the
-  out-of-sample or holdout splits — those are one-shot (see RUNBOOK.md) and
+  out-of-sample or holdout splits - those are one-shot (see README.md, step 3) and
   the ledger refuses a second attempt.
 
 .PARAMETER From

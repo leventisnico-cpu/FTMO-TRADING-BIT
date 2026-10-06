@@ -7,7 +7,7 @@
   Each process uses its OWN MetaTrader 5 terminal installation and login
   (MT5_GUARD_* for the guard, MT5_* for the runner). The guard is restarted if
   it dies; the runner is restarted if it crashes, but NOT if it refused to start
-  (exit code 3: state\HALT exists or the guard heartbeat is stale) — that needs
+  (exit code 3: state\HALT exists or the guard heartbeat is stale) - that needs
   a human.
 
   Required (environment variables or the git-ignored .env file, see .env.example):
