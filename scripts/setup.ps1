@@ -1,7 +1,9 @@
 <#
 .SYNOPSIS
   One-time setup on Windows (your PC or the VPS): installs uv if missing,
+  repairs Python if it has gone missing (e.g. quarantined by antivirus),
   installs dependencies, runs the full test suite, and checks MetaTrader 5.
+  Safe to re-run at any time.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
@@ -16,6 +18,8 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 }
 Assert-Command git "Install Git for Windows: https://git-scm.com/download/win"
 
+# Reinstalls Python and rebuilds .venv if the interpreter has gone missing.
+Repair-PythonEnv
 Invoke-Step "Install Python 3.11 + dependencies (incl. MetaTrader5 package)" {
     uv sync --group dev --extra live
 }

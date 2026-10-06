@@ -74,6 +74,21 @@ the process. That is not a failing test.
 If the detection names a specific known malware family, or points at a file
 outside this folder, don't add an exclusion. Look into it first.
 
+### Let Claude Code work on this PC directly
+
+A cloud Claude session can't reach your PC or your MT5 terminal. To have Claude
+run these scripts itself, install Claude Code locally (no admin rights needed):
+
+```powershell
+irm https://claude.ai/install.ps1 | iex
+cd C:\Users\leven\FTMO-TRADING-BIT
+claude
+```
+
+Or use the Claude desktop app's **Code** tab and choose **Local** with this
+folder. Either way, it asks before running commands and can only reach what
+your user account can. Setup docs: https://code.claude.com/docs/en/setup
+
 ## Live: FTMO Free Trial first, on a Windows VPS in Europe
 
 1. Install **two** MT5 terminals in separate folders (e.g. `C:\MT5-Guard`,

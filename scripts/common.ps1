@@ -39,6 +39,45 @@ function Assert-Command {
     }
 }
 
+function Test-PythonEnv {
+    # True when the project's Python runs. `uv run` also creates .venv if missing.
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"  # PS 5.1 turns redirected stderr into errors
+    try {
+        $script:PythonProbe = (uv run --frozen python -c "import sys; print(sys.version.split()[0])" 2>&1 |
+            ForEach-Object { if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.Exception.Message } else { "$_" } } |
+            Where-Object { $_ -and $_ -ne "System.Management.Automation.RemoteException" }) -join "`n  "
+        return ($LASTEXITCODE -eq 0)
+    } finally { $ErrorActionPreference = $prev }
+}
+
+function Repair-PythonEnv {
+    <#
+      Makes sure the project's Python interpreter exists. If it is gone (most
+      often Windows Security quarantined python.exe), reinstalls Python 3.11,
+      rebuilds .venv and reinstalls every package. Throws if that fails.
+    #>
+    if (Test-PythonEnv) {
+        Write-Host "Python OK ($script:PythonProbe)" -ForegroundColor Green
+        return
+    }
+    Write-Host ""
+    Write-Host "Python environment is broken:" -ForegroundColor Yellow
+    Write-Host "  $script:PythonProbe" -ForegroundColor Yellow
+    Write-Host "Usually Windows Security quarantined python.exe. Reinstalling..." -ForegroundColor Yellow
+    Invoke-Step "Reinstall Python 3.11" { uv python install 3.11 --reinstall }
+    $venv = Join-Path $RepoRoot ".venv"
+    if (Test-Path $venv) { Remove-Item $venv -Recurse -Force }
+    Invoke-Step "Rebuild .venv and reinstall packages" { uv sync --group dev --extra live }
+    if (-not (Test-PythonEnv)) {
+        throw ("Python still broken after reinstall: $script:PythonProbe`n" +
+            "Windows Security is probably deleting it again. Check Protection history; " +
+            "if python.exe under AppData\Roaming\uv\python is listed with a generic " +
+            "detection, choose Allow, or add that folder under Exclusions, then re-run.")
+    }
+    Write-Host "Python repaired ($script:PythonProbe)" -ForegroundColor Green
+}
+
 function Invoke-Step {
     # Runs a native command and stops the script if it fails.
     param([string]$Title, [scriptblock]$Block)

@@ -70,7 +70,7 @@ if ($hasGit) {
 if ($hasUv) {
     $py = (uv run --frozen python -c "import sys; print(sys.version.split()[0])" 2>&1 | Select-Object -Last 1)
     if ($LASTEXITCODE -eq 0 -and "$py" -match "^3\.11") { Add-Result PASS "Python env" "Python $py" }
-    else { Add-Result FAIL "Python env" "$py  -> run scripts\setup.ps1" }
+    else { Add-Result FAIL "Python env" "$py  -> run scripts\setup.ps1 (reinstalls Python automatically)" }
 
     $imp = (uv run --frozen python -c "import ftmo_bot, numpy, pandas, pyarrow, yaml; print('ok')" 2>&1 | Select-Object -Last 1)
     Add-Result ($(if ("$imp" -eq "ok") { "PASS" } else { "FAIL" })) "Bot packages" "$imp"
