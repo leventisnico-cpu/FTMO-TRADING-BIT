@@ -27,7 +27,9 @@ class LedgerRefusal(RuntimeError):
 def _entries(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
-    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    return [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
 
 
 def check(path: Path, split: str, params_hash: str) -> None:
@@ -63,5 +65,5 @@ def record(path: Path, split: str, params_hash: str, **extra: Any) -> None:
         "ts_utc": datetime.now(UTC).isoformat(timespec="seconds"),
         **extra,
     }
-    with path.open("a") as fh:
+    with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(entry) + "\n")

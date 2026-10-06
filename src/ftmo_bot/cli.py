@@ -158,7 +158,7 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     result.days.to_parquet(out / "days.parquet", index=False)
     result.equity.to_parquet(out / "equity.parquet", index=False)
     result.rejections.to_parquet(out / "rejections.parquet", index=False)
-    (out / "summary.json").write_text(json.dumps(summary, indent=2, default=str))
+    (out / "summary.json").write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
     ledger.record(
         ledger_path,
         args.split,
@@ -203,7 +203,7 @@ def cmd_montecarlo(args: argparse.Namespace) -> int:
     )
     res["split"] = args.split
     res["params_hash"] = params.params_hash
-    (reports / "montecarlo.json").write_text(json.dumps(res, indent=2))
+    (reports / "montecarlo.json").write_text(json.dumps(res, indent=2), encoding="utf-8")
     build_report(reports, Path(args.integrity_dir), profile)
     print(
         json.dumps(
@@ -380,7 +380,20 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _safe_console() -> None:
+    """Never crash on a character the console can't show.
+
+    Redirected stdout/stderr on Windows use cp1252, which has no "→" or "σ";
+    escape such characters instead of raising UnicodeEncodeError mid-run.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(errors="backslashreplace")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _safe_console()
     args = build_parser().parse_args(argv)
     if args.cmd not in ("guard", "paper", "live"):
         _setup_logging(verbose=args.verbose)

@@ -119,7 +119,7 @@ def test_state_roundtrips(tmp_path: Path) -> None:
     assert s.has_key("k") and not s.has_key("j")
     s.write_halt(HaltRecord("overall", "r", date(2026, 3, 3), now))
     assert not s.clear_daily_halt(date(2026, 3, 4))  # overall halts never auto-clear
-    s.halt_path.write_text("garbage")
+    s.halt_path.write_text("garbage", encoding="utf-8")
     assert s.read_halt() is not None and s.read_halt().kind == "manual"  # type: ignore[union-attr]
     st = s.load_runner()
     st.day, st.consecutive_losses = date(2026, 3, 4), 1

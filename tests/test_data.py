@@ -272,7 +272,8 @@ def test_load_csv(tmp_path: Path) -> None:
     p = tmp_path / "ev.csv"
     p.write_text(
         "ts_utc,currency,impact,title\n2024-01-11T13:30:00Z,usd,High,CPI\n"
-        "2024-01-11T13:30:00Z,usd,High,CPI\n"
+        "2024-01-11T13:30:00Z,usd,High,CPI\n",
+        encoding="utf-8",
     )
     ev = cal.load_csv(p)
     assert len(ev) == 1 and ev[0].currency == "USD"

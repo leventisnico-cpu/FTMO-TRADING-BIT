@@ -480,7 +480,7 @@ not parameter tuning.</p>
 
 
 def coverage_from_json(path: Path, module_suffix: str = "risk/ftmo_rules.py") -> float | None:
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     for name, f in data.get("files", {}).items():
         if name.replace("\\", "/").endswith(module_suffix):
             s = f["summary"]
@@ -500,14 +500,14 @@ def build_report(
     for k in SPLITS:
         p = reports_dir / k / "summary.json"
         if p.exists():
-            summaries[k] = json.loads(p.read_text())
+            summaries[k] = json.loads(p.read_text(encoding="utf-8"))
     mc_path = reports_dir / "montecarlo.json"
-    mc = json.loads(mc_path.read_text()) if mc_path.exists() else None
+    mc = json.loads(mc_path.read_text(encoding="utf-8")) if mc_path.exists() else None
     integrity = {}
     for s in SYMBOLS:
         p = integrity_dir / f"{s}.json"
         if p.exists():
-            integrity[s] = json.loads(p.read_text())
+            integrity[s] = json.loads(p.read_text(encoding="utf-8"))
     cov = coverage_from_json(coverage_json) if coverage_json and coverage_json.exists() else None
     gates = evaluate_gates(summaries, mc, integrity, cov, profile.challenge_fee)
     warnings = []
@@ -524,8 +524,9 @@ def build_report(
         "VERIFY in config/ftmo_2step.yaml must be confirmed on the FTMO demo."
     )
     out = reports_dir / "report.html"
-    out.write_text(render_html(summaries, mc, gates, warnings))
+    out.write_text(render_html(summaries, mc, gates, warnings), encoding="utf-8")
     (reports_dir / "gates.json").write_text(
-        json.dumps({"verdict": verdict(gates), "gates": [g.__dict__ for g in gates]}, indent=2)
+        json.dumps({"verdict": verdict(gates), "gates": [g.__dict__ for g in gates]}, indent=2),
+        encoding="utf-8",
     )
     return out

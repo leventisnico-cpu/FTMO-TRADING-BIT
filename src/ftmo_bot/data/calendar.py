@@ -82,7 +82,7 @@ def fetch_week(
         raise
     cache_dir.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(text)
+    tmp.write_text(text, encoding="utf-8")
     tmp.replace(path)
     return path
 
@@ -90,7 +90,7 @@ def fetch_week(
 def load_cache(cache_dir: Path) -> list[NewsEvent]:
     events: list[NewsEvent] = []
     for p in sorted(cache_dir.glob("ff_*.json")):
-        events.extend(parse_ff_json(p.read_text()))
+        events.extend(parse_ff_json(p.read_text(encoding="utf-8")))
     return dedupe(events)
 
 

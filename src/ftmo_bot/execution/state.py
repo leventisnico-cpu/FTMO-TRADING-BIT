@@ -29,7 +29,7 @@ from ftmo_bot.risk.ftmo_rules import Baseline
 def atomic_write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
-    with tmp.open("w") as fh:
+    with tmp.open("w", encoding="utf-8") as fh:
         fh.write(text)
         fh.flush()
         os.fsync(fh.fileno())
@@ -69,7 +69,7 @@ class StateStore:
     def load_baseline(self) -> Baseline | None:
         if not self.baseline_path.exists():
             return None
-        d = json.loads(self.baseline_path.read_text())
+        d = json.loads(self.baseline_path.read_text(encoding="utf-8"))
         return Baseline(
             day=date.fromisoformat(d["day"]),
             equity=float(d["equity"]),
@@ -102,7 +102,7 @@ class StateStore:
     def heartbeat_age(self, now_utc: datetime) -> float | None:
         """Seconds since the guard's last heartbeat; None if missing/corrupt."""
         try:
-            ts = datetime.fromisoformat(self.heartbeat_path.read_text().strip())
+            ts = datetime.fromisoformat(self.heartbeat_path.read_text(encoding="utf-8").strip())
         except (FileNotFoundError, ValueError):
             return None
         return (now_utc - ts).total_seconds()
@@ -121,7 +121,7 @@ class StateStore:
         if not self.halt_path.exists():
             return None
         try:
-            d = json.loads(self.halt_path.read_text())
+            d = json.loads(self.halt_path.read_text(encoding="utf-8"))
             return HaltRecord(
                 d["kind"],
                 d["reason"],
@@ -162,7 +162,7 @@ class StateStore:
     def _keys(self) -> list[str]:
         if not self.keys_path.exists():
             return []
-        keys: list[str] = json.loads(self.keys_path.read_text())
+        keys: list[str] = json.loads(self.keys_path.read_text(encoding="utf-8"))
         return keys
 
     def has_key(self, key: str) -> bool:
@@ -183,7 +183,7 @@ class StateStore:
     def load_runner(self) -> RunnerState:
         if not self.runner_path.exists():
             return RunnerState()
-        d: dict[str, Any] = json.loads(self.runner_path.read_text())
+        d: dict[str, Any] = json.loads(self.runner_path.read_text(encoding="utf-8"))
         day = d.pop("day", None)
         return RunnerState(day=date.fromisoformat(day) if day else None, **d)
 

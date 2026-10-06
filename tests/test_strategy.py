@@ -219,7 +219,7 @@ FORBIDDEN = ("ftmo_bot.execution", "ftmo_bot.risk.guard")
 
 def _imports(path: Path) -> set[str]:
     mods: set[str] = set()
-    for node in ast.walk(ast.parse(path.read_text())):
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
         if isinstance(node, ast.Import):
             mods |= {a.name for a in node.names}
         elif isinstance(node, ast.ImportFrom) and node.module:

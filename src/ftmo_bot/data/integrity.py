@@ -117,7 +117,7 @@ def run_integrity(raw_dir: Path, inst: InstrumentParams, tz: str, out_dir: Path)
         "excluded": sorted([*failed, *no_session]),
     }
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / f"{inst.symbol}.json").write_text(json.dumps(report, indent=2))
+    (out_dir / f"{inst.symbol}.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     return report
 
 
@@ -127,4 +127,4 @@ def load_excluded(out_dir: Path, symbol: str) -> set[date]:
         raise FileNotFoundError(
             f"no integrity report for {symbol} at {path}; run `ftmo-bot integrity` first"
         )
-    return {date.fromisoformat(d) for d in json.loads(path.read_text())["excluded"]}
+    return {date.fromisoformat(d) for d in json.loads(path.read_text(encoding="utf-8"))["excluded"]}

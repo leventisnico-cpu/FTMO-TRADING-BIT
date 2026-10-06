@@ -46,7 +46,7 @@ def state(**kw: object) -> R.AccountState:
 
 def test_module_is_pure() -> None:
     """No I/O / MT5 / clock imports in the rules engine (top invariant)."""
-    src = Path(R.__file__).read_text()
+    src = Path(R.__file__).read_text(encoding="utf-8")
     tree = ast.parse(src)
     imported: set[str] = set()
     for node in ast.walk(tree):

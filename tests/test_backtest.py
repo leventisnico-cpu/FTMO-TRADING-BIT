@@ -335,7 +335,9 @@ def test_gates_pending_without_runs() -> None:
 
 def test_build_report_html(tmp_path: Path, profile: FtmoProfile) -> None:
     (tmp_path / "insample").mkdir()
-    (tmp_path / "insample" / "summary.json").write_text(json.dumps(_summary(10, 0.1, 0.5, 0.01)))
+    (tmp_path / "insample" / "summary.json").write_text(
+        json.dumps(_summary(10, 0.1, 0.5, 0.01)), encoding="utf-8"
+    )
     cov = tmp_path / "coverage.json"
     cov.write_text(
         json.dumps(
@@ -351,12 +353,13 @@ def test_build_report_html(tmp_path: Path, profile: FtmoProfile) -> None:
                     }
                 }
             }
-        )
+        ),
+        encoding="utf-8",
     )
     out = report.build_report(tmp_path, tmp_path / "integ", profile, cov)
-    text = out.read_text()
+    text = out.read_text(encoding="utf-8")
     assert "In-sample vs out-of-sample vs holdout" in text and "INCOMPLETE" in text
-    gates = json.loads((tmp_path / "gates.json").read_text())
+    gates = json.loads((tmp_path / "gates.json").read_text(encoding="utf-8"))
     cov_gate = next(g for g in gates["gates"] if "branch coverage" in g["name"])
     assert cov_gate["status"] == "PASS"
 

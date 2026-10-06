@@ -21,13 +21,13 @@ DAYS = 45
 def test_cli_pipeline_end_to_end(tmp_path: Path) -> None:
     cfg = tmp_path / "config"
     shutil.copytree(ROOT / "config", cfg)
-    strat = yaml.safe_load((cfg / "strategy.yaml").read_text())
+    strat = yaml.safe_load((cfg / "strategy.yaml").read_text(encoding="utf-8"))
     strat["splits"] = {
         "insample": ["2023-01-02", "2023-01-31"],
         "oos": ["2023-02-01", "2023-02-15"],
         "holdout": ["2023-02-16", None],
     }
-    (cfg / "strategy.yaml").write_text(yaml.safe_dump(strat))
+    (cfg / "strategy.yaml").write_text(yaml.safe_dump(strat), encoding="utf-8")
     raw = tmp_path / "raw"
     write_structured_market(raw, START, DAYS)
     common = [
@@ -49,21 +49,23 @@ def test_cli_pipeline_end_to_end(tmp_path: Path) -> None:
     assert main([*common, "integrity"]) == 0
     assert main([*common, "backtest", "--split", "oos"]) == 2  # refused: no in-sample yet
     assert main([*common, "backtest", "--split", "insample"]) == 0
-    summary = json.loads((tmp_path / "reports" / "insample" / "summary.json").read_text())
+    summary = json.loads(
+        (tmp_path / "reports" / "insample" / "summary.json").read_text(encoding="utf-8")
+    )
     assert summary["split"] == "insample" and summary["days"] > 0
     assert summary["trades"] >= 10, summary  # the engine really traded
     assert set(summary["exit_reasons"]) <= {"target", "stop", "breakeven", "time", "guard_halt"}
     assert summary["news_events_loaded"] == 0
     assert main([*common, "montecarlo", "--split", "insample", "--paths", "50"]) == 0
-    mc = json.loads((tmp_path / "reports" / "montecarlo.json").read_text())
+    mc = json.loads((tmp_path / "reports" / "montecarlo.json").read_text(encoding="utf-8"))
     assert mc["paths"] == 50 and 0.0 <= mc["p_both"] <= 1.0
     assert main([*common, "backtest", "--split", "oos"]) == 0
     assert main([*common, "backtest", "--split", "oos"]) == 2  # refused: already run once
     assert main([*common, "backtest", "--split", "holdout"]) == 0
     assert main([*common, "backtest", "--split", "holdout"]) == 2  # touched once
-    html = (tmp_path / "reports" / "report.html").read_text()
+    html = (tmp_path / "reports" / "report.html").read_text(encoding="utf-8")
     assert "Go/no-go checklist" in html
-    gates = json.loads((tmp_path / "reports" / "gates.json").read_text())
+    gates = json.loads((tmp_path / "reports" / "gates.json").read_text(encoding="utf-8"))
     assert gates["verdict"] in ("NO-GO", "INCOMPLETE")  # synthetic data never goes green
-    ledger = (tmp_path / "reports" / "ledger.jsonl").read_text().splitlines()
+    ledger = (tmp_path / "reports" / "ledger.jsonl").read_text(encoding="utf-8").splitlines()
     assert [json.loads(x)["split"] for x in ledger] == ["insample", "oos", "holdout"]
