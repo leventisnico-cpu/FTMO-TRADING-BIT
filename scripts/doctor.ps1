@@ -18,6 +18,7 @@ param([switch]$SkipTests)
 
 . "$PSScriptRoot\common.ps1"
 $ErrorActionPreference = "Continue"
+Import-DotEnv  # so the MT5 probe can use MT5_PATH / MT5_LOGIN from .env
 $results = New-Object System.Collections.Generic.List[object]
 
 function Add-Result {
@@ -81,8 +82,17 @@ if ($hasUv) {
 
     # --- MT5 terminal (read-only) ------------------------------------------
     $probe = @'
-import json, MetaTrader5 as m
-out = {"init": bool(m.initialize())}
+import json, os, MetaTrader5 as m
+# Attach to the terminal named in .env (MT5_PATH); without it the MetaTrader5
+# package picks whichever install it finds first, often not the logged-in one.
+kw = {}
+if os.environ.get("MT5_PATH"):
+    kw["path"] = os.environ["MT5_PATH"]
+if all(os.environ.get(k) for k in ("MT5_LOGIN", "MT5_PASSWORD", "MT5_SERVER")):
+    kw.update(login=int(os.environ["MT5_LOGIN"]), password=os.environ["MT5_PASSWORD"],
+              server=os.environ["MT5_SERVER"])
+out = {"init": bool(m.initialize(**kw)), "attach": kw.get("path", "first terminal found"),
+       "with_login": "login" in kw}
 if not out["init"]:
     out["error"] = str(m.last_error())
 else:
@@ -109,7 +119,14 @@ print(json.dumps(out))
     if ($null -eq $mt5) {
         Add-Result FAIL "MT5 terminal" "probe failed: $raw"
     } elseif (-not $mt5.init) {
-        Add-Result FAIL "MT5 terminal" "cannot attach ($($mt5.error)). Open MT5 and log in to your FTMO account."
+        $hint = if ($mt5.attach -eq "first terminal found") {
+            "Set MT5_PATH in .env to the terminal64.exe of the MT5 window that is logged in to FTMO (and MT5_LOGIN/MT5_PASSWORD/MT5_SERVER to let the probe log in itself)."
+        } elseif (-not $mt5.with_login) {
+            "Attached to $($mt5.attach) but it is not logged in. Log in there, or fill MT5_LOGIN/MT5_PASSWORD/MT5_SERVER in .env."
+        } else {
+            "Login to $($mt5.attach) failed: check MT5_LOGIN/MT5_PASSWORD/MT5_SERVER in .env against your FTMO client area."
+        }
+        Add-Result FAIL "MT5 terminal" "cannot attach ($($mt5.error)). $hint"
     } else {
         $t = $mt5.terminal
         Add-Result ($(if ($t.connected) { "PASS" } else { "FAIL" })) "MT5 terminal" "$($t.path), connected=$($t.connected)"
