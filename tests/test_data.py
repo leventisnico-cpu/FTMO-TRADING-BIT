@@ -144,6 +144,72 @@ def test_http_fetcher_rate_limit_and_retry() -> None:
         g("http://x/b")
 
 
+def test_http_fetcher_survives_429_and_slows_down() -> None:
+    """Dukascopy answered 429 on the very first request: wait as told, slow down, carry on."""
+    import email.message
+
+    sleeps: list[float] = []
+    calls = {"n": 0}
+
+    class Resp(io.BytesIO):
+        def __enter__(self) -> Resp:
+            return self
+
+        def __exit__(self, *a: object) -> None:
+            pass
+
+    def throttling(url: str, timeout: float) -> Resp:
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            hdrs = email.message.Message()
+            hdrs["Retry-After"] = "7"
+            raise urllib.error.HTTPError(url, 429, "slow down", hdrs, None)
+        return Resp(b"ok")
+
+    f = dk.HttpFetcher(
+        min_interval_s=0.25,
+        retries=0,  # a 429 must not count as an ordinary failure
+        throttle_backoff_s=1.0,
+        sleep=sleeps.append,
+        clock=lambda: 1e9,
+        opener=throttling,
+    )
+    assert f("http://x/t") == b"ok"
+    assert sleeps.count(7.0) == 2  # honoured Retry-After both times
+    assert f.min_interval_s == 1.0  # 0.25 -> 0.5 -> 1.0: permanently slower
+
+    def always_429(url: str, timeout: float) -> Resp:
+        raise urllib.error.HTTPError(url, 429, "slow down", None, None)  # type: ignore[arg-type]
+
+    pauses: list[float] = []
+    g = dk.HttpFetcher(
+        throttle_retries=2,
+        throttle_backoff_s=1.0,
+        max_delay_s=1.5,
+        sleep=pauses.append,
+        clock=lambda: 1e9,
+        opener=always_429,
+    )
+    with pytest.raises(RuntimeError, match="rate limited 3 times"):
+        g("http://x/u")
+    # pause 1.0 (then 0.5 spacing), pause 2.0 capped to 1.5 (then 1.0 spacing), give up
+    assert pauses == [1.0, 0.5, 1.5, 1.0]
+
+
+def test_default_opener_sends_browser_user_agent(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, object] = {}
+
+    def fake_urlopen(req: urllib.request.Request, timeout: float) -> str:
+        seen["ua"] = req.get_header("User-agent")
+        seen["url"] = req.full_url
+        return "resp"
+
+    monkeypatch.setattr(dk.urllib.request, "urlopen", fake_urlopen)
+    assert dk._default_open("https://datafeed.dukascopy.com/x", 5.0) == "resp"
+    assert seen["url"] == "https://datafeed.dukascopy.com/x"
+    assert isinstance(seen["ua"], str) and seen["ua"].startswith("Mozilla/5.0")
+
+
 # ---------------------------------------------------------------- resample
 
 

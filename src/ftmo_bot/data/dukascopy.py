@@ -23,6 +23,7 @@ import urllib.request
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -90,8 +91,38 @@ def empty_ticks() -> pd.DataFrame:
     )
 
 
+# urllib's default "Python-urllib/x.y" agent is throttled or refused by many
+# CDNs, Dukascopy's included (HTTP 429 on the very first request).
+DEFAULT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    "Accept": "*/*",
+}
+
+
+def _default_open(url: str, timeout: float) -> Any:
+    req = urllib.request.Request(url, headers=DEFAULT_HEADERS)
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
+def _retry_after(exc: urllib.error.HTTPError) -> float:
+    """Seconds the server asked us to wait, or 0 if it didn't say."""
+    value = exc.headers.get("Retry-After") if exc.headers is not None else None
+    try:
+        return float(value) if value else 0.0
+    except ValueError:
+        return 0.0
+
+
 class HttpFetcher:
-    """Rate-limited HTTP GET with retries. 404 means "no ticks that hour"."""
+    """Rate-limited HTTP GET with retries. 404 means "no ticks that hour".
+
+    Two kinds of failure are handled differently:
+    - network errors / 5xx: ``retries`` attempts with exponential ``backoff_s``;
+    - HTTP 429 (rate limited): wait at least ``Retry-After`` (else a long
+      exponential pause capped at ``max_delay_s``), permanently slow the
+      request rate, and allow ``throttle_retries`` such pauses. A multi-hour
+      download must survive the server asking it to slow down.
+    """
 
     def __init__(
         self,
@@ -99,21 +130,29 @@ class HttpFetcher:
         retries: int = 4,
         backoff_s: float = 2.0,
         timeout_s: float = 30.0,
+        throttle_retries: int = 12,
+        throttle_backoff_s: float = 15.0,
+        max_delay_s: float = 300.0,
         sleep: Callable[[float], None] = _time.sleep,
         clock: Callable[[], float] = _time.monotonic,
-        opener: Callable[..., object] = urllib.request.urlopen,
+        opener: Callable[..., object] = _default_open,
     ) -> None:
         self.min_interval_s = min_interval_s
         self.retries = retries
         self.backoff_s = backoff_s
         self.timeout_s = timeout_s
+        self.throttle_retries = throttle_retries
+        self.throttle_backoff_s = throttle_backoff_s
+        self.max_delay_s = max_delay_s
         self._sleep = sleep
         self._clock = clock
         self._open = opener
         self._last = -float("inf")
 
     def __call__(self, url: str) -> bytes:
-        for attempt in range(self.retries + 1):
+        failures = 0
+        throttled = 0
+        while True:
             wait = self.min_interval_s - (self._clock() - self._last)
             if wait > 0:
                 self._sleep(wait)
@@ -125,15 +164,32 @@ class HttpFetcher:
             except urllib.error.HTTPError as exc:
                 if exc.code == 404:
                     return b""
+                if exc.code == 429:
+                    throttled += 1
+                    if throttled > self.throttle_retries:
+                        raise RuntimeError(
+                            f"giving up on {url}: rate limited {throttled} times (HTTP 429)"
+                        ) from exc
+                    backoff = min(self.throttle_backoff_s * 2 ** (throttled - 1), self.max_delay_s)
+                    delay = max(_retry_after(exc), backoff)
+                    self.min_interval_s = min(max(self.min_interval_s * 2, 0.5), 5.0)
+                    log.warning(
+                        "rate limited (HTTP 429): pausing %.0fs, now %.2fs between requests: %s",
+                        delay,
+                        self.min_interval_s,
+                        url,
+                    )
+                    self._sleep(delay)
+                    continue
                 err: Exception = exc
             except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
                 err = exc
-            if attempt == self.retries:
+            failures += 1
+            if failures > self.retries:
                 raise RuntimeError(f"giving up on {url}: {err}") from err
-            delay = self.backoff_s * (2**attempt)
-            log.warning("fetch failed (%s), retry %d in %.1fs: %s", err, attempt + 1, delay, url)
+            delay = self.backoff_s * 2 ** (failures - 1)
+            log.warning("fetch failed (%s), retry %d in %.1fs: %s", err, failures, delay, url)
             self._sleep(delay)
-        raise AssertionError("unreachable")  # pragma: no cover
 
 
 def day_path(raw_dir: Path, symbol: str, day: date) -> Path:
