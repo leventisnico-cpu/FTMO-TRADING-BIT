@@ -81,13 +81,37 @@ if ($hasUv) {
     else { Add-Result FAIL "MetaTrader5 package" "not installed -> uv sync --group dev --extra live" }
 
     # --- MT5 terminal (read-only) ------------------------------------------
+    # Which terminals are open right now? Their exe paths are what MT5_PATH /
+    # MT5_GUARD_PATH in .env must point at (the placeholders in .env.example
+    # are examples, not real installs).
+    $running = @(Get-Process -Name terminal64 -ErrorAction SilentlyContinue |
+        ForEach-Object { try { $_.Path } catch { $null } } | Where-Object { $_ } | Sort-Object -Unique)
+    if ($running.Count) { Add-Result PASS "MT5 running" ($running -join "; ") }
+    else { Add-Result WARN "MT5 running" "no terminal64.exe process found; open MT5 and log in to the FTMO demo" }
+
+    $probePath = $env:MT5_PATH
+    if ($probePath -and -not (Test-Path $probePath)) {
+        if ($running.Count -eq 1) {
+            Add-Result FAIL "MT5_PATH" "no file at $probePath. In .env set MT5_PATH=$($running[0]) (the terminal that is open now). Probing that one instead."
+            $probePath = $running[0]
+        } else {
+            Add-Result FAIL "MT5_PATH" "no file at $probePath. In .env set MT5_PATH to the terminal64.exe of the MT5 window logged in to FTMO$(if ($running.Count) { ' (one of: ' + ($running -join '; ') + ')' })."
+            $probePath = $null
+        }
+    } elseif (-not $probePath -and $running.Count -eq 1) {
+        Add-Result WARN "MT5_PATH" "not set in .env; probing the open terminal $($running[0]). Set MT5_PATH to it so live mode attaches to the right install."
+        $probePath = $running[0]
+    }
+    $env:FTMO_PROBE_PATH = $probePath
+
     $probe = @'
 import json, os, MetaTrader5 as m
-# Attach to the terminal named in .env (MT5_PATH); without it the MetaTrader5
-# package picks whichever install it finds first, often not the logged-in one.
+# Attach to the terminal chosen above (MT5_PATH from .env, else the single
+# running one); without a path the MetaTrader5 package picks whichever install
+# it finds first, often not the logged-in one.
 kw = {}
-if os.environ.get("MT5_PATH"):
-    kw["path"] = os.environ["MT5_PATH"]
+if os.environ.get("FTMO_PROBE_PATH"):
+    kw["path"] = os.environ["FTMO_PROBE_PATH"]
 if all(os.environ.get(k) for k in ("MT5_LOGIN", "MT5_PASSWORD", "MT5_SERVER")):
     kw.update(login=int(os.environ["MT5_LOGIN"]), password=os.environ["MT5_PASSWORD"],
               server=os.environ["MT5_SERVER"])
@@ -121,6 +145,8 @@ print(json.dumps(out))
     } elseif (-not $mt5.init) {
         $hint = if ($mt5.attach -eq "first terminal found") {
             "Set MT5_PATH in .env to the terminal64.exe of the MT5 window that is logged in to FTMO (and MT5_LOGIN/MT5_PASSWORD/MT5_SERVER to let the probe log in itself)."
+        } elseif ("$($mt5.error)" -match "IPC|-10003|-10005") {
+            "Could not start or attach to $($mt5.attach). Make sure that exact terminal64.exe is the MT5 window that is open and logged in, then re-run."
         } elseif (-not $mt5.with_login) {
             "Attached to $($mt5.attach) but it is not logged in. Log in there, or fill MT5_LOGIN/MT5_PASSWORD/MT5_SERVER in .env."
         } else {
