@@ -11,10 +11,13 @@
 .PARAMETER SkipTests
   Skip the test suite (it takes about a minute).
 
+.PARAMETER NoPrompt
+  Never ask for the MT5 login in the console (CI / unattended runs).
+
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts\doctor.ps1
 #>
-param([switch]$SkipTests)
+param([switch]$SkipTests, [switch]$NoPrompt)
 
 . "$PSScriptRoot\common.ps1"
 $ErrorActionPreference = "Continue"
@@ -89,18 +92,19 @@ if ($hasUv) {
     if ($running.Count) { Add-Result PASS "MT5 running" ($running -join "; ") }
     else { Add-Result WARN "MT5 running" "no terminal64.exe process found; open MT5 and log in to the FTMO demo" }
 
+    # MT5_PATH: fix it in .env ourselves when the answer is unambiguous.
     $probePath = $env:MT5_PATH
-    if ($probePath -and -not (Test-Path $probePath)) {
-        if ($running.Count -eq 1) {
-            Add-Result FAIL "MT5_PATH" "no file at $probePath. In .env set MT5_PATH=$($running[0]) (the terminal that is open now). Probing that one instead."
-            $probePath = $running[0]
-        } else {
-            Add-Result FAIL "MT5_PATH" "no file at $probePath. In .env set MT5_PATH to the terminal64.exe of the MT5 window logged in to FTMO$(if ($running.Count) { ' (one of: ' + ($running -join '; ') + ')' })."
-            $probePath = $null
-        }
-    } elseif (-not $probePath -and $running.Count -eq 1) {
-        Add-Result WARN "MT5_PATH" "not set in .env; probing the open terminal $($running[0]). Set MT5_PATH to it so live mode attaches to the right install."
+    if ((-not $probePath -or -not (Test-Path $probePath)) -and $running.Count -eq 1) {
+        $old = if ($probePath) { "no file at $probePath" } else { "not set" }
+        $env:MT5_PATH = $null
+        Set-DotEnvValue -Key MT5_PATH -Value $running[0]
+        Add-Result PASS "MT5_PATH" "$old; wrote MT5_PATH=$($running[0]) to .env (the terminal that is open now)"
         $probePath = $running[0]
+    } elseif ($probePath -and -not (Test-Path $probePath)) {
+        Add-Result FAIL "MT5_PATH" "no file at $probePath. In .env set MT5_PATH to the terminal64.exe of the MT5 window logged in to FTMO$(if ($running.Count) { ' (one of: ' + ($running -join '; ') + ')' })."
+        $probePath = $null
+    } elseif (-not $probePath) {
+        Add-Result FAIL "MT5_PATH" "not set and $($running.Count) terminals are open; set MT5_PATH in .env to the one logged in to FTMO"
     }
     $env:FTMO_PROBE_PATH = $probePath
 
@@ -137,20 +141,62 @@ print(json.dumps(out))
 '@
     $probeFile = Join-Path $env:TEMP "ftmo_mt5_probe.py"
     Set-Content -Path $probeFile -Value $probe -Encoding UTF8
-    $raw = (uv run --frozen python $probeFile 2>&1 | Select-Object -Last 1)
+    function Invoke-Mt5Probe {
+        $raw = (uv run --frozen python $probeFile 2>&1 | Select-Object -Last 1)
+        try { return ($raw | ConvertFrom-Json) } catch { return [pscustomobject]@{ init = $false; raw = "$raw" } }
+    }
+    Write-Host "  (attaching to MT5, up to 30 s)" -ForegroundColor DarkGray
+    $mt5 = Invoke-Mt5Probe
+
+    # The terminal answers "Authorization failed" (-6) whenever it is not
+    # connected to a trade server under the account we need, so instead of
+    # asking the user to edit .env, ask for the FTMO demo login here once,
+    # try it, and store it only if it works.
+    $canPrompt = -not $NoPrompt -and -not $env:CI -and [Environment]::UserInteractive -and -not [Console]::IsInputRedirected
+    if (-not $mt5.init -and -not $mt5.with_login -and $probePath -and $canPrompt) {
+        Write-Host ""
+        Write-Host "MT5 refused ($($mt5.error)). Enter the FTMO demo account from your FTMO client area" -ForegroundColor Yellow
+        Write-Host "(MetaTrader 5 credentials). Leave the login empty to skip." -ForegroundColor Yellow
+        $login = ""; $server = "FTMO-Demo"; $pw = $null
+        try {
+            $login = "$(Read-Host '  Login (account number)')".Trim()
+            if ($login -match "^\d+$") {
+                $s = "$(Read-Host '  Server [FTMO-Demo]')".Trim()
+                if ($s) { $server = $s }
+                $sec = Read-Host "  Password (hidden)" -AsSecureString
+                $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
+                try { $pw = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+                finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+            }
+        } catch { Write-Host "  (could not read input: $($_.Exception.Message))" -ForegroundColor Yellow; $login = "" }
+        if ($login -match "^\d+$" -and $null -ne $pw) {
+            $env:MT5_LOGIN = $login; $env:MT5_SERVER = $server; $env:MT5_PASSWORD = $pw
+            Write-Host "  (logging in, up to 30 s)" -ForegroundColor DarkGray
+            $mt5 = Invoke-Mt5Probe
+            if ($mt5.init) {
+                Set-DotEnvValue -Key MT5_LOGIN -Value $login
+                Set-DotEnvValue -Key MT5_SERVER -Value $server
+                Set-DotEnvValue -Key MT5_PASSWORD -Value $pw
+                Add-Result PASS "MT5 login" "login $login on $server works; saved to .env (password not shown)"
+            } else {
+                Add-Result FAIL "MT5 login" "login $login on $server rejected ($($mt5.error)); nothing saved. Check the account number, server name and the MT5 (not web) password in the FTMO client area."
+            }
+            $pw = $null
+        }
+    }
     Remove-Item $probeFile -ErrorAction SilentlyContinue
-    try { $mt5 = $raw | ConvertFrom-Json } catch { $mt5 = $null }
-    if ($null -eq $mt5) {
-        Add-Result FAIL "MT5 terminal" "probe failed: $raw"
+
+    if ($mt5.raw) {
+        Add-Result FAIL "MT5 terminal" "probe failed: $($mt5.raw)"
     } elseif (-not $mt5.init) {
-        $hint = if ($mt5.attach -eq "first terminal found") {
-            "Set MT5_PATH in .env to the terminal64.exe of the MT5 window that is logged in to FTMO (and MT5_LOGIN/MT5_PASSWORD/MT5_SERVER to let the probe log in itself)."
+        $hint = if (-not $probePath) {
+            "Set MT5_PATH in .env to the terminal64.exe of the MT5 window that is logged in to FTMO."
         } elseif ("$($mt5.error)" -match "IPC|-10003|-10005") {
             "Could not start or attach to $($mt5.attach). Make sure that exact terminal64.exe is the MT5 window that is open and logged in, then re-run."
         } elseif (-not $mt5.with_login) {
-            "Attached to $($mt5.attach) but it is not logged in. Log in there, or fill MT5_LOGIN/MT5_PASSWORD/MT5_SERVER in .env."
+            "$($mt5.attach) is open but not connected to a trade account (see the bottom-right corner of the MT5 window). Re-run the doctor and enter the FTMO demo login when asked, or fill MT5_LOGIN/MT5_PASSWORD/MT5_SERVER in .env."
         } else {
-            "Login to $($mt5.attach) failed: check MT5_LOGIN/MT5_PASSWORD/MT5_SERVER in .env against your FTMO client area."
+            "Login to $($mt5.attach) failed: check MT5_LOGIN/MT5_PASSWORD/MT5_SERVER in .env against your FTMO client area (MetaTrader 5 credentials, not the web login)."
         }
         Add-Result FAIL "MT5 terminal" "cannot attach ($($mt5.error)). $hint"
     } else {
@@ -177,8 +223,9 @@ print(json.dumps(out))
 foreach ($u in @(
         @{ Name = "Dukascopy ticks"; Url = "https://datafeed.dukascopy.com/datafeed/EURUSD/2024/00/02/10h_ticks.bi5" },
         @{ Name = "Forex Factory news"; Url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json" })) {
+    Write-Host "  (checking $($u.Name), up to 15 s)" -ForegroundColor DarkGray
     try {
-        $r = Invoke-WebRequest -Uri $u.Url -Method Get -UseBasicParsing -TimeoutSec 20
+        $r = Invoke-WebRequest -Uri $u.Url -Method Get -UseBasicParsing -TimeoutSec 15
         Add-Result PASS $u.Name "HTTP $($r.StatusCode), $($r.RawContentLength) bytes"
     } catch {
         Add-Result FAIL $u.Name "unreachable: $($_.Exception.Message)"
@@ -224,6 +271,7 @@ foreach ($s in "EURUSD", "GBPUSD", "NAS100", "XAUUSD") {
 
 # --- Test suite ---------------------------------------------------------------
 if ($hasUv -and -not $SkipTests) {
+    Write-Host "  (running the test suite, about a minute)" -ForegroundColor DarkGray
     $out = (uv run --frozen pytest -q 2>&1 | Select-Object -Last 1)
     Add-Result ($(if ($LASTEXITCODE -eq 0) { "PASS" } else { "FAIL" })) "Test suite" "$out"
 }
