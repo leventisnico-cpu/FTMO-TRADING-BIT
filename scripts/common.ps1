@@ -32,6 +32,29 @@ function Import-DotEnv {
     }
 }
 
+function Set-DotEnvValue {
+    <#
+      Writes KEY=VALUE into .env (created from .env.example if missing),
+      replacing an existing KEY line or appending one. Also sets it in this
+      process. Values are never printed by the caller when they are secrets.
+    #>
+    param([Parameter(Mandatory)][string]$Key, [string]$Value,
+          [string]$Path = (Join-Path $RepoRoot ".env"))
+    if (-not (Test-Path $Path)) {
+        $example = Join-Path $RepoRoot ".env.example"
+        if (Test-Path $example) { Copy-Item $example $Path } else { New-Item -ItemType File -Path $Path | Out-Null }
+    }
+    $lines = @(Get-Content $Path)
+    $done = $false
+    $out = foreach ($line in $lines) {
+        if (-not $done -and $line -match "^\s*$([regex]::Escape($Key))\s*=") { $done = $true; "$Key=$Value" }
+        else { $line }
+    }
+    if (-not $done) { $out = @($out) + "$Key=$Value" }
+    Set-Content -Path $Path -Value $out -Encoding UTF8
+    Set-Item -Path "Env:$Key" -Value $Value
+}
+
 function Assert-Command {
     param([string]$Name, [string]$Hint)
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
