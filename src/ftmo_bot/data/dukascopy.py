@@ -15,6 +15,7 @@ hours are fetched, so an interrupted download never leaves a partial day.
 
 from __future__ import annotations
 
+import http.client
 import logging
 import lzma
 import time as _time
@@ -117,7 +118,11 @@ class HttpFetcher:
     """Rate-limited HTTP GET with retries. 404 means "no ticks that hour".
 
     Two kinds of failure are handled differently:
-    - network errors / 5xx: ``retries`` attempts with exponential ``backoff_s``;
+    - network errors / 5xx: ``retries`` attempts with exponential ``backoff_s``
+      capped at ``max_delay_s``. Dukascopy times out or answers 503 for
+      minutes at a time, so the default is patient (well over an hour of
+      retries) rather than quick to fail: the download resumes, but a crash
+      still costs the user a restart they may not see for hours;
     - HTTP 429 (rate limited): wait at least ``Retry-After`` (else a long
       exponential pause capped at ``max_delay_s``), permanently slow the
       request rate, and allow ``throttle_retries`` such pauses. A multi-hour
@@ -127,7 +132,7 @@ class HttpFetcher:
     def __init__(
         self,
         min_interval_s: float = 0.25,
-        retries: int = 4,
+        retries: int = 25,
         backoff_s: float = 2.0,
         timeout_s: float = 30.0,
         throttle_retries: int = 12,
@@ -182,13 +187,25 @@ class HttpFetcher:
                     self._sleep(delay)
                     continue
                 err: Exception = exc
-            except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+            except (
+                urllib.error.URLError,
+                TimeoutError,
+                ConnectionError,
+                http.client.HTTPException,
+            ) as exc:
                 err = exc
             failures += 1
             if failures > self.retries:
-                raise RuntimeError(f"giving up on {url}: {err}") from err
-            delay = self.backoff_s * 2 ** (failures - 1)
-            log.warning("fetch failed (%s), retry %d in %.1fs: %s", err, failures, delay, url)
+                raise RuntimeError(f"giving up on {url} after {failures} attempts: {err}") from err
+            delay = min(self.backoff_s * 2 ** (failures - 1), self.max_delay_s)
+            log.warning(
+                "fetch failed (%s), retry %d/%d in %.0fs: %s",
+                err,
+                failures,
+                self.retries,
+                delay,
+                url,
+            )
             self._sleep(delay)
 
 
