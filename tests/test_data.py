@@ -144,6 +144,48 @@ def test_http_fetcher_rate_limit_and_retry() -> None:
         g("http://x/b")
 
 
+def test_http_fetcher_outlasts_a_dukascopy_outage() -> None:
+    """Three timeouts then a 503 (seen on 2026-10-14) must not end the download.
+
+    Retries are many and the backoff is capped, so the fetcher waits out a
+    multi-minute outage and carries on once the server answers.
+    """
+    import http.client
+
+    sleeps: list[float] = []
+    calls = {"n": 0}
+
+    class Resp(io.BytesIO):
+        def __enter__(self) -> Resp:
+            return self
+
+        def __exit__(self, *a: object) -> None:
+            pass
+
+    def flaky(url: str, timeout: float) -> Resp:
+        calls["n"] += 1
+        if calls["n"] <= 3:
+            raise TimeoutError("timed out")
+        if calls["n"] <= 6:
+            raise urllib.error.HTTPError(url, 503, "unavailable", None, None)  # type: ignore[arg-type]
+        if calls["n"] == 7:
+            raise http.client.IncompleteRead(b"")
+        return Resp(b"ok")
+
+    f = dk.HttpFetcher(
+        min_interval_s=0,
+        backoff_s=2.0,
+        max_delay_s=20.0,
+        sleep=sleeps.append,
+        clock=lambda: 1e9,
+        opener=flaky,
+    )
+    assert f("http://x/o") == b"ok"
+    assert calls["n"] == 8
+    assert sleeps == [2.0, 4.0, 8.0, 16.0, 20.0, 20.0, 20.0]  # capped, not unbounded
+    assert dk.HttpFetcher().retries >= 20  # default is patient enough for an overnight run
+
+
 def test_http_fetcher_survives_429_and_slows_down() -> None:
     """Dukascopy answered 429 on the very first request: wait as told, slow down, carry on."""
     import email.message
