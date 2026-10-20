@@ -16,6 +16,7 @@ every gate green on real ticks **and** the 60-day FTMO Free Trial passes.
 | `SPEC.md` | The build spec: strategy, FTMO limits, go/no-go gates |
 | `CLAUDE.md` | Module contracts that must never drift |
 | `AGENT_PROMPT.md` | Kickoff prompt for a Claude Code session operating this repo |
+| `COWORK_PROMPT.md` | Kickoff prompt for Claude Cowork on the Windows PC: research, paper test, then FTMO, with the memory of the build session |
 | `config/` | `strategy.yaml` (one parameter set), `ftmo_2step.yaml` (limits, contract specs) |
 | `src/ftmo_bot/risk/ftmo_rules.py` | Pure rules engine shared by backtest and live (100% branch coverage) |
 | `src/ftmo_bot/{data,strategy,backtest,execution}` | Data pipeline, strategy, backtest and Monte Carlo, MT5 execution |
