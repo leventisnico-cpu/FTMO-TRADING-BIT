@@ -43,9 +43,12 @@ def test_cli_pipeline_end_to_end(tmp_path: Path) -> None:
         str(tmp_path / "reports"),
         "--calendar-dir",
         str(tmp_path / "cal"),
+        "--state-dir",
+        str(tmp_path / "state"),
     ]
 
     assert main([*common, "resample"]) == 0
+    assert (tmp_path / "state" / "logs" / "research.log").is_file()  # file log, not just stderr
     assert main([*common, "integrity"]) == 0
     assert main([*common, "backtest", "--split", "oos"]) == 2  # refused: no in-sample yet
     assert main([*common, "backtest", "--split", "insample"]) == 0

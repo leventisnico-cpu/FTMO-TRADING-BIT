@@ -25,6 +25,9 @@ param(
 . "$PSScriptRoot\common.ps1"
 Assert-Command uv "Run scripts\setup.ps1 first."
 Repair-PythonEnv
+$logFile = Join-Path $RepoRoot "state\logs\research.log"
+Write-Host "Log: $logFile (every ftmo-bot step appends here)" -ForegroundColor DarkGray
+
 
 Invoke-Step "Download Dukascopy ticks from $From (resumable, ~2-4 GB)" {
     uv run ftmo-bot download --from $From

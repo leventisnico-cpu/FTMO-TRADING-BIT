@@ -59,6 +59,31 @@ def _setup_logging(path: Path | None = None, verbose: bool = False) -> None:
     )
 
 
+def _keep_awake() -> bool:
+    """Ask Windows not to idle-sleep while this process lives.
+
+    The tick download runs for a day or more and the guard/runner for weeks,
+    usually on a laptop whose power plan sleeps after a few idle minutes.
+    ES_CONTINUOUS | ES_SYSTEM_REQUIRED suppresses only the idle timer (a closed
+    lid still follows the power plan) and Windows drops the request when the
+    process exits. A no-op on other platforms. Returns whether it took effect.
+    """
+    if sys.platform != "win32":
+        return False
+    import ctypes
+
+    windll = getattr(ctypes, "windll", None)
+    if windll is None:  # pragma: no cover - win32 without ctypes.windll
+        return False
+    es_continuous, es_system_required = 0x80000000, 0x00000001
+    previous: int = windll.kernel32.SetThreadExecutionState(es_continuous | es_system_required)
+    if previous == 0:
+        log.warning("could not block idle sleep; keep the PC awake yourself")
+        return False
+    log.info("idle sleep blocked while this process runs (lid close still sleeps)")
+    return True
+
+
 # ------------------------------------------------------------------ data
 
 
@@ -66,6 +91,7 @@ def cmd_download(args: argparse.Namespace) -> int:
     from ftmo_bot.data.dukascopy import HttpFetcher, download_range
 
     params, profile = _configs(args)
+    _keep_awake()
     end = date.fromisoformat(args.to) if args.to else date.today()
     fetch = HttpFetcher(min_interval_s=args.rate_limit)
     for sym in _symbols(args, params):
@@ -258,6 +284,7 @@ def cmd_guard(args: argparse.Namespace) -> int:
     params, profile = _configs(args)
     state = Path(args.state_dir)
     _setup_logging(state / "logs" / "guard.log", args.verbose)
+    _keep_awake()
     client = _mt5_from_env("MT5_GUARD_", profile)
     Guard(
         client,
@@ -282,6 +309,7 @@ def _run_strategy(args: argparse.Namespace, require_demo: bool) -> int:
     params, profile = _configs(args)
     state = Path(args.state_dir)
     _setup_logging(state / "logs" / "runner.log", args.verbose)
+    _keep_awake()
     cache = Path(args.calendar_dir)
     try:
         calendar.fetch_week(cache, datetime.now(UTC))
@@ -396,7 +424,9 @@ def main(argv: list[str] | None = None) -> int:
     _safe_console()
     args = build_parser().parse_args(argv)
     if args.cmd not in ("guard", "paper", "live"):
-        _setup_logging(verbose=args.verbose)
+        # Research commands run for hours unattended; keep a file copy of the
+        # console log so a stopped run can be diagnosed after the window closed.
+        _setup_logging(Path(args.state_dir) / "logs" / "research.log", args.verbose)
     rc: int = args.fn(args)
     return rc
 
