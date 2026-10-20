@@ -99,6 +99,7 @@ class FtmoProfile:
     signal_max_age_seconds: float
     contracts: dict[str, ContractSpec]
     dukascopy: dict[str, tuple[str, float]]  # symbol -> (instrument, price divisor)
+    histdata: dict[str, str]  # symbol -> HistData.com pair (fallback tick source)
     mt5_symbols: dict[str, str]
 
 
@@ -161,6 +162,7 @@ def load_profile(path: Path | None = None) -> FtmoProfile:
     d, _ = _load_yaml(path)
     contracts: dict[str, ContractSpec] = {}
     dukascopy: dict[str, tuple[str, float]] = {}
+    histdata: dict[str, str] = {}
     mt5_symbols: dict[str, str] = {}
     for sym, c in d["contracts"].items():
         contracts[sym] = ContractSpec(
@@ -176,6 +178,7 @@ def load_profile(path: Path | None = None) -> FtmoProfile:
             quote_to_account=float(c.get("quote_to_account", 1.0)),
         )
         dukascopy[sym] = (str(c["dukascopy"]["instrument"]), float(c["dukascopy"]["price_divisor"]))
+        histdata[sym] = str(c.get("histdata", {}).get("pair", sym))
         mt5_symbols[sym] = str(c["mt5_symbol"])
     return FtmoProfile(
         profile=d["profile"],
@@ -199,6 +202,7 @@ def load_profile(path: Path | None = None) -> FtmoProfile:
         signal_max_age_seconds=float(d["mt5"]["signal_max_age_seconds"]),
         contracts=contracts,
         dukascopy=dukascopy,
+        histdata=histdata,
         mt5_symbols=mt5_symbols,
     )
 

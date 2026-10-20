@@ -49,6 +49,7 @@ contracts:
     lot_step: 0.01
     max_lot: 50
     dukascopy: {instrument: EURUSD, price_divisor: 100000}
+    histdata: {pair: EURUSD}
   GBPUSD:
     mt5_symbol: GBPUSD
     contract_size: 100000
@@ -60,6 +61,7 @@ contracts:
     lot_step: 0.01
     max_lot: 50
     dukascopy: {instrument: GBPUSD, price_divisor: 100000}
+    histdata: {pair: GBPUSD}
   NAS100:
     mt5_symbol: US100.cash        # VERIFY symbol name on the FTMO server
     contract_size: 1              # VERIFY: $ per index point per lot
@@ -71,6 +73,7 @@ contracts:
     lot_step: 0.01
     max_lot: 500
     dukascopy: {instrument: USA100IDXUSD, price_divisor: 1000}
+    histdata: {pair: NSXUSD}
   XAUUSD:
     mt5_symbol: XAUUSD
     contract_size: 100            # oz per lot
@@ -82,3 +85,4 @@ contracts:
     lot_step: 0.01
     max_lot: 50
     dukascopy: {instrument: XAUUSD, price_divisor: 1000}
+    histdata: {pair: XAUUSD}

@@ -60,6 +60,21 @@ uv run pytest --cov=ftmo_bot --cov-branch --cov-report=json:coverage.json
 uv run ftmo-bot report --coverage-json coverage.json
 ```
 
+### Dukascopy is down (503, timeouts for hours)
+
+`datafeed.dukascopy.com` has multi-day outages. The same pipeline runs on
+HistData.com tick data instead (free, monthly zips, bid/ask, fixed-EST stamps
+converted to UTC; Nasdaq-100 is their `NSXUSD` CFD):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\research.ps1 -Source histdata
+```
+
+One provider per symbol folder: the download refuses to mix providers inside
+`data\raw\<SYMBOL>` (different spreads and tick density would blur the
+backtest). To switch, delete or move that folder first. The source is recorded
+in `data\raw\<SYMBOL>\_source.txt`.
+
 ### Windows Security blocked a step
 
 If a step stops with code `-1073739514` (`0xC0000906`), Windows Security killed

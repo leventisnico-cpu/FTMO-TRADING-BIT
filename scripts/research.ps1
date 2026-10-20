@@ -15,12 +15,20 @@
   Optional historical high-impact events CSV (ts_utc,currency,impact,title).
   Without it the backtest's news filter is inactive and the report warns.
 
+.PARAMETER Source
+  Tick provider: dukascopy (default, hourly .bi5 files) or histdata
+  (HistData.com monthly zips; the fallback while datafeed.dukascopy.com is
+  down). One provider per symbol folder: switching means deleting data\raw\<SYMBOL>.
+
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts\research.ps1
+  powershell -ExecutionPolicy Bypass -File scripts\research.ps1 -Source histdata
 #>
 param(
     [string]$From = "2020-01-01",
-    [string]$NewsCsv = ""
+    [string]$NewsCsv = "",
+    [ValidateSet("dukascopy", "histdata")]
+    [string]$Source = "dukascopy"
 )
 . "$PSScriptRoot\common.ps1"
 Assert-Command uv "Run scripts\setup.ps1 first."
@@ -29,8 +37,8 @@ $logFile = Join-Path $RepoRoot "state\logs\research.log"
 Write-Host "Log: $logFile (every ftmo-bot step appends here)" -ForegroundColor DarkGray
 
 
-Invoke-Step "Download Dukascopy ticks from $From (resumable, ~2-4 GB)" {
-    uv run ftmo-bot download --from $From
+Invoke-Step "Download $Source ticks from $From (resumable, ~2-4 GB on disk)" {
+    uv run ftmo-bot download --from $From --source $Source
 }
 Invoke-Step "Resample ticks into 15m / 4H bars" { uv run ftmo-bot resample }
 Invoke-Step "Data integrity checks (failing days are excluded)" { uv run ftmo-bot integrity }

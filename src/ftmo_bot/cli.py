@@ -88,18 +88,31 @@ def _keep_awake() -> bool:
 
 
 def cmd_download(args: argparse.Namespace) -> int:
-    from ftmo_bot.data.dukascopy import HttpFetcher, download_range
+    from ftmo_bot.data import dukascopy, histdata
 
     params, profile = _configs(args)
     _keep_awake()
+    start = date.fromisoformat(args.from_)
     end = date.fromisoformat(args.to) if args.to else date.today()
-    fetch = HttpFetcher(min_interval_s=args.rate_limit)
+    raw = Path(args.raw_dir)
+    fetch = dukascopy.HttpFetcher(min_interval_s=args.rate_limit)
+    transport = histdata.HttpTransport()
     for sym in _symbols(args, params):
-        instrument, divisor = profile.dukascopy[sym]
-        paths = download_range(
-            sym, instrument, divisor, date.fromisoformat(args.from_), end, Path(args.raw_dir), fetch
-        )
-        print(f"{sym}: {len(paths)} day files in {Path(args.raw_dir) / sym}")
+        try:
+            # One provider per symbol folder: spreads, tick density and the
+            # index CFD differ, and a backtest must not quietly straddle both.
+            histdata.claim_source(raw, sym, args.source)
+            if args.source == "histdata":
+                paths = histdata.download_range(
+                    sym, profile.histdata[sym], start, end, raw, transport
+                )
+            else:
+                instrument, divisor = profile.dukascopy[sym]
+                paths = dukascopy.download_range(sym, instrument, divisor, start, end, raw, fetch)
+        except histdata.SourceMismatch as exc:
+            log.error("%s", exc)
+            return 2
+        print(f"{sym}: {len(paths)} day files in {raw / sym} (source: {args.source})")
     return 0
 
 
@@ -377,6 +390,13 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--from", dest="from_", required=True)
     d.add_argument("--to")
     d.add_argument("--rate-limit", type=float, default=0.25, help="min seconds between requests")
+    d.add_argument(
+        "--source",
+        choices=["dukascopy", "histdata"],
+        default="dukascopy",
+        help="tick provider; histdata (monthly zips, fixed-EST stamps) is the fallback "
+        "when datafeed.dukascopy.com is down. One provider per symbol folder.",
+    )
     d.set_defaults(fn=cmd_download)
 
     r = sub.add_parser("resample", help="ticks → 15m / 4H bars tagged in CE(S)T")
