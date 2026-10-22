@@ -12,8 +12,9 @@
   First day to download (default 2020-01-01).
 
 .PARAMETER NewsCsv
-  Optional historical high-impact events CSV (ts_utc,currency,impact,title).
-  Without it the backtest's news filter is inactive and the report warns.
+  Historical high-impact events CSV (ts_utc,currency,impact,title). Defaults
+  to data\news\ff_high_impact_2020-01_2026-01.csv (see data\news\README.md).
+  Pass "" to run without it; the report then warns that the filter is inactive.
 
 .PARAMETER Source
   Tick provider: dukascopy (default, hourly .bi5 files) or histdata
@@ -26,7 +27,7 @@
 #>
 param(
     [string]$From = "2020-01-01",
-    [string]$NewsCsv = "",
+    [string]$NewsCsv = "data\news\ff_high_impact_2020-01_2026-01.csv",
     [ValidateSet("dukascopy", "histdata")]
     [string]$Source = "dukascopy"
 )
@@ -44,7 +45,10 @@ Invoke-Step "Resample ticks into 15m / 4H bars" { uv run ftmo-bot resample }
 Invoke-Step "Data integrity checks (failing days are excluded)" { uv run ftmo-bot integrity }
 
 $bt = @("run", "ftmo-bot", "backtest", "--split", "insample")
-if ($NewsCsv) { $bt += @("--news-csv", $NewsCsv) }
+if ($NewsCsv) {
+    if (-not (Test-Path $NewsCsv)) { throw "news CSV not found: $NewsCsv (pass -NewsCsv '' to run without it)" }
+    $bt += @("--news-csv", $NewsCsv)
+}
 Invoke-Step "In-sample backtest 2020-2023" { uv @bt }
 Invoke-Step "Monte Carlo on in-sample trades (10,000 stressed paths)" {
     uv run ftmo-bot montecarlo --split insample
