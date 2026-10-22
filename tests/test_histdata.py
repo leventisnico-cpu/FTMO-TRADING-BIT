@@ -117,6 +117,7 @@ def test_month_split_carry_and_resume(tmp_path: Path) -> None:
     assert len(jan2) == 10 and jan2["ts_utc"].iloc[0] == pd.Timestamp("2020-01-02 08:00", tz="UTC")
     assert pd.read_parquet(day_path(tmp_path, "EURUSD", date(2020, 1, 5))).empty  # Sunday
     assert hd.carry_path(tmp_path, "EURUSD", date(2020, 3, 1)).exists()
+    assert not hd.carry_path(tmp_path, "EURUSD", date(2020, 2, 1)).exists()  # merged, removed
     assert hd.source_marker(tmp_path, "EURUSD").read_text(encoding="utf-8").strip() == "histdata"
 
     # Re-run: everything on disk, nothing fetched again.
@@ -221,3 +222,45 @@ class _FrozenDatetime(datetime):
     @classmethod
     def now(cls, tz: object = None) -> _FrozenDatetime:  # type: ignore[override]
         return cls(2020, 3, 15, tzinfo=UTC)
+
+
+def test_running_month_is_never_requested_or_written(tmp_path: Path) -> None:
+    """HistData serves the current month as a partial file; we must not freeze it."""
+    jan = est_rows(datetime(2020, 1, 2, 3, 0), 3, timedelta(minutes=1))
+    feb = est_rows(datetime(2020, 2, 3, 3, 0), 3, timedelta(minutes=1))  # served, but current
+    t = FakeTransport({(2019, 12): "", (2020, 1): jan, (2020, 2): feb})
+    paths = hd.download_range(
+        "EURUSD",
+        "EURUSD",
+        date(2020, 1, 1),
+        date(2020, 2, 29),
+        tmp_path,
+        t,
+        today_utc=date(2020, 2, 20),
+    )
+    assert [p.name for p in paths][-1] == "2020-01-31.parquet"
+    assert "202002" not in [c[1].get("datemonth") for c in t.calls if c[0] == "POST"]
+    assert not day_path(tmp_path, "EURUSD", date(2020, 2, 3)).exists()
+    # Re-run later in February: still nothing new; in March, February gets fetched.
+    assert (
+        hd.download_range(
+            "EURUSD",
+            "EURUSD",
+            date(2020, 1, 1),
+            date(2020, 2, 29),
+            tmp_path,
+            t,
+            today_utc=date(2020, 2, 28),
+        )
+        == []
+    )
+    march = hd.download_range(
+        "EURUSD",
+        "EURUSD",
+        date(2020, 1, 1),
+        date(2020, 2, 29),
+        tmp_path,
+        t,
+        today_utc=date(2020, 3, 5),
+    )
+    assert march[0].name == "2020-02-01.parquet" and len(march) == 29

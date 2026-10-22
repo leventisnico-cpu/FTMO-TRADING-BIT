@@ -260,15 +260,27 @@ def download_month(
     raw_dir: Path,
     transport: Transport,
     first_day: date | None = None,
+    today_utc: date | None = None,
 ) -> list[Path]:
     """Write every UTC day of the month (from ``first_day`` on) plus the carry
     for the 1st of the next month. Returns [] when everything is already on disk.
+
+    Days on or after ``today_utc`` are never written: HistData serves the
+    running month as a partial file, and a day written early would be skipped
+    by the resume logic forever.
     """
-    days = [d for d in _month_days(year, month) if first_day is None or d >= first_day]
+    today_utc = today_utc or datetime.now(UTC).date()
+    days = [
+        d
+        for d in _month_days(year, month)
+        if (first_day is None or d >= first_day) and d < today_utc
+    ]
     nxt = _next_month_first(year, month)
-    need_carry = (first_day is None or nxt >= first_day) and not day_path(
-        raw_dir, symbol, nxt
-    ).exists()
+    need_carry = (
+        (first_day is None or nxt >= first_day)
+        and nxt < today_utc
+        and not day_path(raw_dir, symbol, nxt).exists()
+    )
     if all(day_path(raw_dir, symbol, d).exists() for d in days) and (
         not need_carry or carry_path(raw_dir, symbol, nxt).exists()
     ):
@@ -284,6 +296,7 @@ def download_month(
             carry = carry_path(raw_dir, symbol, d)
             if carry.exists():
                 df = pd.concat([pd.read_parquet(carry), df], ignore_index=True)
+                carry.unlink()  # merged; the day file is now the record
             else:
                 log.warning(
                     "%s %s: no carry from the previous month; 00:00-05:00 UTC missing", symbol, d
@@ -312,18 +325,23 @@ def download_range(
     today_utc: date | None = None,
 ) -> list[Path]:
     """Download ``[start, end]`` month by month, beginning one month early so
-    the first day's 00:00-05:00 UTC ticks are present. Months HistData has not
-    published yet (the current one, sometimes the previous) end the run quietly.
+    the first day's 00:00-05:00 UTC ticks are present.
+
+    The running month is never requested: HistData serves it as a partial,
+    changing file. A previous month HistData has not published yet ends the run
+    quietly; an older missing month is an error.
     """
     transport = transport or HttpTransport()
     today_utc = today_utc or datetime.now(UTC).date()
-    end = min(end, today_utc - timedelta(days=1))
+    end = min(end, date(today_utc.year, today_utc.month, 1) - timedelta(days=1))
     claim_source(raw_dir, symbol, SOURCE)
     paths: list[Path] = []
     year, month = (start.year - (start.month == 1), (start.month - 2) % 12 + 1)
     while date(year, month, 1) <= end:
         try:
-            paths.extend(download_month(symbol, pair, year, month, raw_dir, transport, start))
+            paths.extend(
+                download_month(symbol, pair, year, month, raw_dir, transport, start, today_utc)
+            )
         except MonthUnavailable as exc:
             if date(year, month, 1) < date(start.year, start.month, 1):
                 log.warning(
