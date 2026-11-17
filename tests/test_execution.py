@@ -404,3 +404,29 @@ def test_mt5_client_server_time_conversion() -> None:
     # Server wall-clock 12:00 EET (UTC+2) on 2026-01-15 encoded as if UTC.
     t = datetime(2026, 1, 15, 12, tzinfo=UTC).timestamp()
     assert c._server_to_utc(t) == datetime(2026, 1, 15, 10, tzinfo=UTC)
+
+
+def test_attach_uses_path_only() -> None:
+    fake = FakeMT5()
+    MT5Client(module=fake).attach(r"C:\MT5\terminal64.exe")
+    assert fake.init_kwargs == {"path": r"C:\MT5\terminal64.exe"}
+
+
+def test_attach_failure_raises() -> None:
+    fake = FakeMT5(init_ok=False)
+    with pytest.raises(MT5Error):
+        MT5Client(module=fake).attach(r"C:\MT5\terminal64.exe")
+
+
+def test_mt5_from_env_attaches_when_only_path_is_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ftmo_bot import cli
+    from ftmo_bot.config import DEFAULT_CONFIG_DIR, load_profile
+    from ftmo_bot.execution import mt5_client as mt5_client_mod
+
+    fake = FakeMT5()
+    monkeypatch.setattr(mt5_client_mod.importlib, "import_module", lambda name: fake)
+    for key in ("MT5_LOGIN", "MT5_PASSWORD", "MT5_SERVER"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("MT5_PATH", r"C:\MT5\terminal64.exe")
+    cli._mt5_from_env("MT5_", load_profile(DEFAULT_CONFIG_DIR / "ftmo_2step.yaml"))
+    assert fake.init_kwargs == {"path": r"C:\MT5\terminal64.exe"}

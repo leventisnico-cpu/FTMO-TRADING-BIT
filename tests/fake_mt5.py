@@ -56,6 +56,8 @@ class FakeMT5:
     sent: list[dict[str, Any]] = field(default_factory=list)
     fail_account: bool = False
     reject_orders: bool = False
+    init_ok: bool = True
+    init_kwargs: dict[str, Any] = field(default_factory=dict)
     _next_ticket: int = 1000
 
     # constants
@@ -79,7 +81,8 @@ class FakeMT5:
     TIMEFRAME_H4 = 16388
 
     def initialize(self, **kw: Any) -> bool:
-        return True
+        self.init_kwargs = kw
+        return self.init_ok
 
     def shutdown(self) -> None:
         pass

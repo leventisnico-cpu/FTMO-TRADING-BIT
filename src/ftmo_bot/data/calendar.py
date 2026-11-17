@@ -21,6 +21,8 @@ from pathlib import Path
 import pandas as pd
 
 FF_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+# The CDN answers 403 to urllib's default "Python-urllib/3.x" agent.
+USER_AGENT = "Mozilla/5.0 (compatible; ftmo-bot/1.0)"
 
 
 @dataclass(frozen=True)
@@ -57,7 +59,8 @@ def high_impact(events: Iterable[NewsEvent], impact: str = "High") -> list[NewsE
 
 
 def _default_fetch(url: str) -> str:
-    with urllib.request.urlopen(url, timeout=30) as resp:
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(req, timeout=30) as resp:
         body: bytes = resp.read()
     return body.decode("utf-8")
 

@@ -94,17 +94,22 @@ if ($hasUv) {
 
     # MT5_PATH: fix it in .env ourselves when the answer is unambiguous.
     $probePath = $env:MT5_PATH
-    if ((-not $probePath -or -not (Test-Path $probePath)) -and $running.Count -eq 1) {
-        $old = if ($probePath) { "no file at $probePath" } else { "not set" }
+    $probeRunning = [bool]($probePath -and ($running -contains $probePath))
+    if ($running.Count -eq 1 -and -not $probeRunning) {
+        $old = if (-not $probePath) { "not set" }
+               elseif (-not (Test-Path $probePath)) { "no file at $probePath" }
+               else { "$probePath is not the terminal that is open" }
         $env:MT5_PATH = $null
         Set-DotEnvValue -Key MT5_PATH -Value $running[0]
         Add-Result PASS "MT5_PATH" "$old; wrote MT5_PATH=$($running[0]) to .env (the terminal that is open now)"
         $probePath = $running[0]
-    } elseif ($probePath -and -not (Test-Path $probePath)) {
-        Add-Result FAIL "MT5_PATH" "no file at $probePath. In .env set MT5_PATH to the terminal64.exe of the MT5 window logged in to FTMO$(if ($running.Count) { ' (one of: ' + ($running -join '; ') + ')' })."
-        $probePath = $null
     } elseif (-not $probePath) {
         Add-Result FAIL "MT5_PATH" "not set and $($running.Count) terminals are open; set MT5_PATH in .env to the one logged in to FTMO"
+    } elseif (-not (Test-Path $probePath)) {
+        Add-Result FAIL "MT5_PATH" "no file at $probePath. In .env set MT5_PATH to the terminal64.exe of the MT5 window logged in to FTMO$(if ($running.Count) { ' (one of: ' + ($running -join '; ') + ')' })."
+        $probePath = $null
+    } else {
+        Add-Result PASS "MT5_PATH" $probePath
     }
     $env:FTMO_PROBE_PATH = $probePath
 
@@ -245,7 +250,7 @@ if (Test-Path $envFile) {
         if ($v) { Add-Result ($(if (Test-Path $v) { "PASS" } else { "FAIL" })) $k $(if (Test-Path $v) { "found" } else { "no file at $v" }) }
     }
     if ($env:MT5_GUARD_PATH -and $env:MT5_GUARD_PATH -eq $env:MT5_PATH) {
-        Add-Result FAIL "MT5 installs" "guard and runner point at the same terminal; install a second copy"
+        Add-Result WARN "MT5 installs" "guard and runner share one terminal: fine for paper, install a second copy before live"
     }
     $tg = [bool]($env:TELEGRAM_BOT_TOKEN -and $env:TELEGRAM_CHAT_ID)
     Add-Result ($(if ($tg) { "PASS" } else { "WARN" })) "Telegram alerts" $(if ($tg) { "configured" } else { "not configured (optional, recommended)" })

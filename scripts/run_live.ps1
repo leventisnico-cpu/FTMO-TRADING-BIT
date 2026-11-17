@@ -31,8 +31,11 @@ foreach ($v in "MT5_GUARD_LOGIN", "MT5_GUARD_PASSWORD", "MT5_GUARD_SERVER", "MT5
                "MT5_LOGIN", "MT5_PASSWORD", "MT5_SERVER", "MT5_PATH") {
     if (-not (Test-Path "Env:$v")) { throw "missing environment variable $v" }
 }
+if ($env:MT5_GUARD_PATH -eq $env:MT5_PATH -and $Mode -eq "live") {
+    throw "guard and runner must use separate MT5 terminal installations in live mode (MT5_GUARD_PATH == MT5_PATH)"
+}
 if ($env:MT5_GUARD_PATH -eq $env:MT5_PATH) {
-    throw "guard and runner must use separate MT5 terminal installations (MT5_GUARD_PATH == MT5_PATH)"
+    Write-Warning "paper mode: guard and runner share one terminal ($($env:MT5_PATH)); both attach to the same demo login"
 }
 
 function Start-Guard {

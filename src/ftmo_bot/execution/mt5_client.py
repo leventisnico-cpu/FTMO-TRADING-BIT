@@ -124,6 +124,12 @@ class MT5Client:
             raise MT5Error(f"initialize failed: {self.mt5.last_error()}")
         self._log("connected", login=login, server=server)
 
+    def attach(self, path: str) -> None:
+        """Attach to a terminal that is already running and logged in (no credentials)."""
+        if not self.mt5.initialize(path=path):
+            raise MT5Error(f"initialize failed: {self.mt5.last_error()}")
+        self._log("attached", path=path)
+
     def shutdown(self) -> None:
         self.mt5.shutdown()
 

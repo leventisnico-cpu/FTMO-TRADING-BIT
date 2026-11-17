@@ -126,6 +126,10 @@ class Guard:
             self._log(out)
             return out
         self._mt5_down_notified = False
+        # Heartbeat as soon as equity is readable: notification latency (Telegram,
+        # healthcheck, 10 s timeouts each) must never make the runner see a stale
+        # guard and refuse to trade.
+        self.store.write_heartbeat(now)
 
         tz = self.params.timezone
         today = ftmo_rules.trading_day(now, tz)
@@ -178,7 +182,6 @@ class Guard:
             out.reason = f"flatten error: {exc}"
             self.notifier.send(f"GUARD: {out.reason}")
 
-        self.store.write_heartbeat(now)
         self._daily_summary(now, acct.equity, baseline.equity)
         if self._last_ping is None or now - self._last_ping >= timedelta(seconds=60):
             self.notifier.ping()

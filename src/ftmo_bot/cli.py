@@ -273,19 +273,48 @@ def cmd_report(args: argparse.Namespace) -> int:
 # ------------------------------------------------------------------ live
 
 
+def _load_dotenv(path: Path | None = None) -> None:
+    """Load KEY=VALUE lines from .env into os.environ (existing values win).
+
+    The PowerShell scripts import .env before starting ``uv``; running
+    ``ftmo-bot guard|paper|live`` directly must work the same way.
+    """
+    env_file = path if path is not None else ROOT / ".env"
+    if not env_file.is_file():
+        return
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        text = line.strip()
+        if not text or text.startswith("#") or "=" not in text:
+            continue
+        key, _, value = text.partition("=")
+        key = key.strip()
+        if key and not os.environ.get(key):
+            os.environ[key] = value.strip().strip('"').strip("'")
+
+
 def _mt5_from_env(prefix: str, profile: FtmoProfile):  # type: ignore[no-untyped-def]
     from ftmo_bot.execution.mt5_client import MT5Client
 
-    missing = [k for k in ("LOGIN", "PASSWORD", "SERVER") if not os.environ.get(f"{prefix}{k}")]
-    if missing:
-        raise SystemExit(f"missing environment variables: {', '.join(prefix + m for m in missing)}")
+    login = os.environ.get(f"{prefix}LOGIN")
+    password = os.environ.get(f"{prefix}PASSWORD")
+    server = os.environ.get(f"{prefix}SERVER")
+    path = os.environ.get(f"{prefix}PATH")
     client = MT5Client(server_tz=profile.server_timezone)
-    client.connect(
-        int(os.environ[f"{prefix}LOGIN"]),
-        os.environ[f"{prefix}PASSWORD"],
-        os.environ[f"{prefix}SERVER"],
-        os.environ.get(f"{prefix}PATH"),
-    )
+    if login and password and server:
+        client.connect(int(login), password, server, path)
+    elif path:
+        # The terminal is already open and logged in; attaching needs no password.
+        client.attach(path)
+    else:
+        missing = [
+            prefix + k
+            for k, v in (("LOGIN", login), ("PASSWORD", password), ("SERVER", server))
+            if not v
+        ]
+        raise SystemExit(
+            f"missing environment variables: {', '.join(missing)} "
+            f"(or set {prefix}PATH to attach to an already logged-in terminal)"
+        )
     return client
 
 
@@ -443,6 +472,8 @@ def _safe_console() -> None:
 def main(argv: list[str] | None = None) -> int:
     _safe_console()
     args = build_parser().parse_args(argv)
+    if args.cmd in ("guard", "paper", "live"):
+        _load_dotenv()
     if args.cmd not in ("guard", "paper", "live"):
         # Research commands run for hours unattended; keep a file copy of the
         # console log so a stopped run can be diagnosed after the window closed.
